@@ -58,3 +58,4 @@ apps/extension/dist/
 .npm
 .pnp
 .pnp.js
+.vercel
