@@ -1,0 +1,780 @@
+// ---------------------------------------------------------------------------
+// Ikan Intel Hub — Prisma schema
+//
+// Conventions:
+// - cuid() ids everywhere
+// - All timestamps in UTC; freshness_at marks last-source-update for the row
+// - Vector columns are declared as Unsupported("vector(1024)") — Prisma can't
+//   type them but `db push` + raw queries handle them; @ikan/search uses raw
+//   SQL for ANN lookups
+// - Contact values are encrypted at the application layer (pgcrypto-style),
+//   stored as text in `value`. `valueHash` is a deterministic SHA-256 for
+//   dedupe + lookup without decryption
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "fullTextSearch"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [pgcrypto, pg_trgm, vector, uuid_ossp(map: "uuid-ossp"), unaccent]
+}
+
+// ===========================================================================
+// Identity & Teams
+// ===========================================================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  image     String?
+  emailVerified DateTime?
+  role      UserRole @default(MEMBER)
+  teamId    String?
+  team      Team?    @relation(fields: [teamId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Auth.js relations
+  accounts  Account[]
+  sessions  Session[]
+
+  // Ikan relations
+  lists       List[]
+  notes       Note[]
+  searches    Search[]
+  threads     ChatThread[]
+  audits      AuditLog[]
+  imports     Import[]
+  extensionTokens ExtensionToken[]
+
+  @@index([teamId])
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  plan      String   @default("free")
+  createdAt DateTime @default(now())
+
+  users  User[]
+  lists  List[]
+  notes  Note[]
+  tags   Tag[]
+}
+
+// Auth.js v5 — Account, Session, VerificationToken
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model ExtensionToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique // sha256 of the raw token; user is shown the raw on creation only
+  label     String?
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime?
+  revokedAt DateTime?
+
+  @@index([userId])
+}
+
+// ===========================================================================
+// Companies & Persons (the entities we collect intel on)
+// ===========================================================================
+
+model Company {
+  id                      String   @id @default(cuid())
+  slug                    String   @unique
+  name                    String
+  legalName               String?
+  aliases                 String[] @default([])
+  primaryDomain           String?  @unique
+  domains                 String[] @default([])
+  description             String?  @db.Text
+  industry                String?
+  subIndustry             String?
+  sizeEstimate            String?
+  employeeCountEstimate   Int?
+  foundedYear             Int?
+  hqCity                  String?
+  hqState                 String?
+  hqCountry               String?
+  indiaPresence           Boolean  @default(false)
+  indiaOfficeCount        Int      @default(0)
+  mobilityRelevanceScore  Float    @default(0)
+  logoUrl                 String?
+  socialLinks             Json?
+  // Vector for semantic search
+  embedding               Unsupported("vector(1024)")?
+  freshnessAt             DateTime @default(now())
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  offices             Office[]
+  employments         EmploymentRecord[]
+  contactPoints       ContactPoint[]
+  domainsRel          Domain[]
+  signals             Signal[]
+  personsCurrent      Person[]            @relation("CurrentCompany")
+  enrichmentJobs      EnrichmentJob[]
+  linkedinObservations LinkedinObservation[]
+  threadPins          ChatThread[]        @relation("ThreadPinnedCompany")
+
+  @@index([name])
+  @@index([primaryDomain])
+  @@index([indiaPresence, mobilityRelevanceScore(sort: Desc)])
+  @@index([freshnessAt])
+}
+
+model Office {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  city          String
+  state         String?
+  country       String   @default("India")
+  address       String?
+  postalCode    String?
+  lat           Float?
+  lng           Float?
+  phone         String?
+  openedAt      DateTime?
+  status        OfficeStatus @default(ACTIVE)
+  confidence    Float    @default(0.7)
+  sourceId      String?
+  source        Source?  @relation(fields: [sourceId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  personsHere   Person[] @relation("PersonOffice")
+
+  @@index([companyId])
+  @@index([city, country])
+}
+
+enum OfficeStatus {
+  ACTIVE
+  RUMORED
+  CLOSED
+}
+
+model Person {
+  id                  String     @id @default(cuid())
+  slug                String     @unique
+  fullName            String
+  firstName           String?
+  lastName            String?
+  middleName          String?
+  currentCompanyId    String?
+  currentCompany      Company?   @relation("CurrentCompany", fields: [currentCompanyId], references: [id], onDelete: SetNull)
+  currentTitle        String?
+  currentSeniority    Seniority?
+  currentDepartment   Department?
+  currentFunction     String?
+  currentOfficeId     String?
+  currentOffice       Office?    @relation("PersonOffice", fields: [currentOfficeId], references: [id], onDelete: SetNull)
+  locationCity        String?
+  locationState       String?
+  locationCountry     String?    @default("India")
+  bio                 String?    @db.Text
+  publicLinkedinUrl   String?    @unique
+  avatarUrl           String?
+  embedding           Unsupported("vector(1024)")?
+  freshnessAt         DateTime   @default(now())
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  tombstonedAt        DateTime? // DPDP deletion — keep id so we never re-ingest
+
+  employments         EmploymentRecord[]
+  contactPoints       ContactPoint[]
+  contactCandidates   ContactCandidate[]
+  signals             Signal[]
+  linkedinObservations LinkedinObservation[]
+  enrichmentJobs      EnrichmentJob[]
+
+  @@index([fullName])
+  @@index([currentCompanyId])
+  @@index([currentDepartment, currentSeniority])
+}
+
+enum Seniority {
+  INTERN
+  JUNIOR
+  MID
+  SENIOR
+  LEAD
+  PRINCIPAL
+  DIRECTOR
+  VP
+  SENIOR_VP
+  C_SUITE
+  FOUNDER
+}
+
+enum Department {
+  HR
+  MOBILITY
+  PROCUREMENT
+  IT
+  FINANCE
+  LEGAL
+  OPERATIONS
+  ENGINEERING
+  SALES
+  MARKETING
+  EXECUTIVE
+  PRODUCT
+  DESIGN
+  RESEARCH
+  OTHER
+}
+
+model EmploymentRecord {
+  id          String    @id @default(cuid())
+  personId    String
+  person      Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title       String
+  seniority   Seniority?
+  department  Department?
+  startDate   DateTime?
+  endDate     DateTime?
+  isCurrent   Boolean   @default(false)
+  confidence  Float     @default(0.7)
+  sourceId    String?
+  source      Source?   @relation(fields: [sourceId], references: [id])
+
+  @@index([personId, isCurrent])
+  @@index([companyId])
+}
+
+// ===========================================================================
+// Contacts
+// ===========================================================================
+
+model ContactPoint {
+  id                String        @id @default(cuid())
+  personId          String?
+  person            Person?       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  companyId         String?
+  company           Company?      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  kind              ContactKind
+  value             String        // encrypted at app layer (pgcrypto AEAD)
+  valueHash         String        @unique // sha256 of canonical value
+  status            ContactStatus @default(INFERRED)
+  isInferred        Boolean       @default(true)
+  verificationMethod VerificationMethod
+  verifiedAt        DateTime?
+  confidence        Float         @default(0.5)
+  sourceId          String
+  source            Source        @relation(fields: [sourceId], references: [id])
+  indiaSpecificFormat Boolean     @default(false) // phone +91 / valid Indian
+  linkedinObservationId String?
+  linkedinObservation LinkedinObservation? @relation(fields: [linkedinObservationId], references: [id], onDelete: SetNull)
+  dncReason         String?
+  reportedBadCount  Int           @default(0)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([personId])
+  @@index([companyId])
+  @@index([status])
+  @@index([kind])
+}
+
+enum ContactKind {
+  EMAIL
+  PHONE
+  SWITCHBOARD
+  GENERIC_EMAIL
+}
+
+enum ContactStatus {
+  VERIFIED
+  INFERRED
+  REPORTED_BAD
+  DNC
+}
+
+enum VerificationMethod {
+  DIRECT_SOURCE_QUOTE
+  PATTERN
+  GITHUB_COMMIT
+  CONFERENCE
+  PRESS_BIO
+  LINKEDIN_EXTENSION
+  MANUAL
+  REPORTED
+  SMTP_MX
+  CROSS_SOURCE
+}
+
+// Transient candidates before promotion to ContactPoint. The contact engine
+// accumulates evidence here, then promotes the strongest candidate per
+// (person, kind) into ContactPoint.
+model ContactCandidate {
+  id              String   @id @default(cuid())
+  personId        String
+  person          Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  kind            ContactKind
+  value           String   // not yet encrypted; promoted version is
+  sourceEvidence  Json     // array of { sourceId, snippet, weight }
+  inferredMethod  VerificationMethod
+  confidence      Float
+  promotedAt      DateTime?
+  promotedContactPointId String?
+  createdAt       DateTime @default(now())
+
+  @@index([personId, kind, confidence(sort: Desc)])
+}
+
+model Domain {
+  id                       String   @id @default(cuid())
+  companyId                String?
+  company                  Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  domain                   String   @unique
+  isPrimary                Boolean  @default(false)
+  mxRecords                Json?
+  emailPattern             String? // e.g. "{first}.{last}@{domain}"
+  patternConfidence        Float    @default(0)
+  patternEvidenceCount     Int      @default(0)
+  catchAll                 Boolean? // null = unknown
+  freshnessAt              DateTime @default(now())
+  createdAt                DateTime @default(now())
+
+  @@index([companyId])
+}
+
+// ===========================================================================
+// Signals
+// ===========================================================================
+
+model Signal {
+  id              String     @id @default(cuid())
+  kind            SignalKind
+  companyId       String?
+  company         Company?   @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  personId        String?
+  person          Person?    @relation(fields: [personId], references: [id], onDelete: SetNull)
+  officeCity      String?    // optional location hint
+  occurredAt      DateTime
+  detectedAt      DateTime   @default(now())
+  title           String
+  summary         String     @db.Text
+  rawText         String?    @db.Text
+  url             String
+  sourceId        String
+  source          Source     @relation(fields: [sourceId], references: [id])
+  confidence      Float      @default(0.6)
+  relevanceScore  Float      @default(0)
+  whyItMatters    String?    @db.Text
+  embedding       Unsupported("vector(1024)")?
+  status          SignalStatus @default(ACTIVE)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([companyId, occurredAt(sort: Desc)])
+  @@index([kind, occurredAt(sort: Desc)])
+  @@index([relevanceScore(sort: Desc), occurredAt(sort: Desc)])
+}
+
+enum SignalKind {
+  OFFICE_OPENING
+  HIRING_SPIKE
+  MOBILITY_HIRE
+  HR_HIRE
+  LEADERSHIP_CHANGE
+  FUNDING
+  ACQUISITION
+  LAYOFF
+  CLIENT_WIN
+  MARKET_ENTRY
+  POLICY_CHANGE
+  LOCATION_LAUNCH
+  EXPANSION_ANNOUNCE
+  PRODUCT_LAUNCH
+  PARTNERSHIP_ANNOUNCE
+}
+
+enum SignalStatus {
+  ACTIVE
+  DISMISSED
+  MERGED
+}
+
+// ===========================================================================
+// Sources & Provenance
+// ===========================================================================
+
+model Source {
+  id          String   @id @default(cuid())
+  kind        SourceKind
+  name        String
+  url         String   @db.Text
+  trustTier   SourceTrustTier @default(SECONDARY)
+  fetchedAt   DateTime @default(now())
+  contentHash String?  // sha256 of fetched content (raw HTML in R2)
+  r2Key       String?  // path in R2 if cached
+  snippet     String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  offices       Office[]
+  employments   EmploymentRecord[]
+  contactPoints ContactPoint[]
+  signals       Signal[]
+
+  @@index([kind])
+  @@index([url])
+  @@index([fetchedAt(sort: Desc)])
+}
+
+enum SourceKind {
+  COMPANY_SITE
+  NEWS
+  PRESS
+  CAREERS_PAGE
+  JOBS_BOARD
+  CONFERENCE
+  GITHUB
+  SERPAPI
+  BING
+  LINKEDIN_EXTENSION
+  MANUAL_UPLOAD
+  INFERRED
+  GOVERNMENT_REGISTRY
+  CRUNCHBASE
+  PATENT
+  ACADEMIC
+}
+
+enum SourceTrustTier {
+  PRIMARY
+  SECONDARY
+  TERTIARY
+}
+
+// ===========================================================================
+// LinkedIn data (snippets + extension observations)
+// ===========================================================================
+
+model LinkedinObservation {
+  id              String   @id @default(cuid())
+  source          LinkedinObservationSource
+  url             String   @unique
+  observedAt      DateTime @default(now())
+  personId        String?
+  person          Person?  @relation(fields: [personId], references: [id], onDelete: SetNull)
+  companyId       String?
+  company         Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  rawSnippet      String?  @db.Text
+  parsedFields    Json
+  resolutionStatus LinkedinResolutionStatus @default(UNRESOLVED)
+  confidence      Float    @default(0.7)
+  createdAt       DateTime @default(now())
+
+  contactPoints   ContactPoint[]
+
+  @@index([personId, observedAt(sort: Desc)])
+  @@index([companyId])
+}
+
+enum LinkedinObservationSource {
+  SERPAPI
+  BING
+  EXTENSION
+}
+
+enum LinkedinResolutionStatus {
+  RESOLVED
+  AMBIGUOUS
+  UNRESOLVED
+}
+
+// ===========================================================================
+// Chat (the centerpiece UX)
+// ===========================================================================
+
+model ChatThread {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String?
+  pinnedEntityKind String?
+  pinnedEntityId  String?
+  pinnedCompanyId String?
+  pinnedCompany   Company? @relation("ThreadPinnedCompany", fields: [pinnedCompanyId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  messages        ChatMessage[]
+
+  @@index([userId, updatedAt(sort: Desc)])
+}
+
+model ChatMessage {
+  id          String     @id @default(cuid())
+  threadId    String
+  thread      ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  role        ChatRole
+  content     String     @db.Text
+  tokenInput  Int        @default(0)
+  tokenOutput Int        @default(0)
+  model       String?
+  citations   Json?      // array of { marker, sourceId, url, snippet }
+  toolCallIds String[]   @default([])
+  createdAt   DateTime   @default(now())
+
+  toolCalls   ToolCall[]
+
+  @@index([threadId, createdAt])
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  TOOL
+  SYSTEM
+}
+
+model ToolCall {
+  id          String     @id @default(cuid())
+  messageId   String
+  message     ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  toolName    String
+  argumentsJson Json
+  resultJson  Json?
+  status      ToolCallStatus @default(PENDING)
+  latencyMs   Int?
+  costTokens  Int?
+  cached      Boolean    @default(false)
+  errorMessage String?
+  createdAt   DateTime   @default(now())
+  completedAt DateTime?
+
+  @@index([messageId])
+  @@index([toolName])
+}
+
+enum ToolCallStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  ERROR
+}
+
+// ===========================================================================
+// Lists, watchlists, notes, tags
+// ===========================================================================
+
+model List {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id])
+  name        String
+  description String?
+  kind        ListKind @default(MIXED)
+  isWatchlist Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items       ListItem[]
+
+  @@index([userId])
+}
+
+enum ListKind {
+  COMPANY_LIST
+  PERSON_LIST
+  MIXED
+}
+
+model ListItem {
+  listId      String
+  list        List     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  entityKind  String   // 'company' | 'person'
+  entityId    String
+  addedAt     DateTime @default(now())
+  notes       String?  @db.Text
+  tags        String[] @default([])
+
+  @@id([listId, entityKind, entityId])
+  @@index([entityKind, entityId])
+}
+
+model Note {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id])
+  entityKind  String
+  entityId    String
+  body        String   @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([entityKind, entityId])
+  @@index([userId])
+}
+
+model Tag {
+  id        String  @id @default(cuid())
+  teamId    String
+  team      Team    @relation(fields: [teamId], references: [id])
+  name      String
+  color     String?
+
+  @@unique([teamId, name])
+}
+
+// ===========================================================================
+// Ingestion, jobs, imports
+// ===========================================================================
+
+model EnrichmentJob {
+  id              String   @id @default(cuid())
+  entityKind      String   // 'company' | 'person'
+  entityId        String?  // null if not yet resolved
+  companyId       String?
+  company         Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  personId        String?
+  person          Person?  @relation(fields: [personId], references: [id], onDelete: SetNull)
+  jobKind         String   // 'initial' | 'refresh' | 'targeted'
+  status          EnrichmentStatus @default(PENDING)
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  sourceIds       String[] @default([])
+  costTokens      Int      @default(0)
+  errorMessage    String?
+  resultSummary   Json?
+  createdAt       DateTime @default(now())
+
+  @@index([entityKind, entityId])
+  @@index([status, createdAt(sort: Desc)])
+}
+
+enum EnrichmentStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+model Import {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  filename     String
+  rowCount     Int      @default(0)
+  importedCount Int     @default(0)
+  status       String   @default("pending")
+  errorMessage String?
+  createdAt    DateTime @default(now())
+}
+
+// ===========================================================================
+// Compliance & Audit
+// ===========================================================================
+
+model DncEntry {
+  id          String   @id @default(cuid())
+  kind        String   // 'email' | 'phone' | 'domain' | 'person' | 'company'
+  value       String
+  valueHash   String   @unique
+  reason      String?
+  reportedBy  String?
+  reportedAt  DateTime @default(now())
+
+  @@index([kind])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String   // e.g. 'contact.revealed', 'list.export', 'dsr.delete'
+  entityKind  String?
+  entityId    String?
+  details     Json?
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([action])
+  @@index([entityKind, entityId])
+}
+
+model Search {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  query           String
+  resolvedIntent  Json?
+  resultCount     Int      @default(0)
+  clickedResultId String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+// ===========================================================================
+// Adapter / scrape bookkeeping
+// ===========================================================================
+
+model BlockedHost {
+  host       String   @id
+  reason     String?
+  firstSeen  DateTime @default(now())
+  lastSeen   DateTime @default(now())
+}

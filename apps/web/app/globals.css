@@ -1,0 +1,216 @@
+@import 'tailwindcss';
+
+/* ─────────────────────────────────────────────────────────────
+   Ikan Intel Hub — Design System
+   "Premium terminal" aesthetic.
+   - Dark by default; light theme deferred to Phase 2.
+   - One accent color (electric lime) used surgically.
+   - Mono for data; sans for chrome; serif for hero moments only.
+   ───────────────────────────────────────────────────────────── */
+
+@theme {
+  /* Surfaces */
+  --color-bg:               #0A0B0E;
+  --color-surface:          #14161B;
+  --color-surface-elev:     #1B1E25;
+  --color-surface-elev-2:   #22262F;
+  --color-border:           #262A33;
+  --color-border-subtle:    #1A1D24;
+
+  /* Text */
+  --color-text:             #F2F4F7;
+  --color-text-2:           #C5C9D2;
+  --color-text-3:           #8B92A0;
+  --color-text-4:           #5C6473;
+
+  /* Accent — electric lime. Used surgically. */
+  --color-accent:           #B8FF66;
+  --color-accent-soft:      rgba(184, 255, 102, 0.15);
+  --color-accent-dim:       #6B9F3E;
+
+  /* Semantic */
+  --color-verified:         #34D399;
+  --color-inferred:         #F59E0B;
+  --color-dnc:              #F87171;
+  --color-info:             #60A5FA;
+
+  /* Spacing rhythm baseline. Tailwind default scale fine; tokenize a few. */
+  --radius-xs:              3px;
+  --radius-sm:              4px;
+  --radius-md:              6px;
+  --radius-lg:              10px;
+  --radius-xl:              14px;
+  --radius-pill:            999px;
+
+  /* Typography */
+  --font-sans:              'Geist', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:              'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display:           'Instrument Serif', ui-serif, Georgia, serif;
+}
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    border-color: var(--color-border-subtle);
+  }
+
+  html, body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'ss01', 'ss02', 'cv11';
+  }
+
+  body {
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-bg);
+  }
+
+  /* Scrollbars — subtle, terminal-ish */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: var(--radius-pill);
+    border: 2px solid var(--color-bg);
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-text-4); }
+
+  /* Focus rings — accent, not blue */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Display headlines */
+  .font-display {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+  }
+
+  .font-mono { font-family: var(--font-mono); }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Component primitives — utility classes reused across components.
+   ───────────────────────────────────────────────────────────── */
+
+@layer components {
+  .surface {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg);
+  }
+  .surface-elev {
+    background-color: var(--color-surface-elev);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg);
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    line-height: 18px;
+    font-family: var(--font-mono);
+    background-color: var(--color-surface-elev);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-2);
+    letter-spacing: 0.01em;
+  }
+  .chip-accent {
+    color: var(--color-accent);
+    border-color: rgba(184, 255, 102, 0.3);
+    background-color: var(--color-accent-soft);
+  }
+  .chip-verified {
+    color: var(--color-verified);
+    border-color: rgba(52, 211, 153, 0.25);
+    background-color: rgba(52, 211, 153, 0.08);
+  }
+  .chip-inferred {
+    color: var(--color-inferred);
+    border-color: rgba(245, 158, 11, 0.25);
+    background-color: rgba(245, 158, 11, 0.06);
+    border-style: dashed;
+  }
+  .chip-dnc {
+    color: var(--color-dnc);
+    border-color: rgba(248, 113, 113, 0.3);
+    background-color: rgba(248, 113, 113, 0.06);
+    text-decoration: line-through;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Bespoke effects.
+   ───────────────────────────────────────────────────────────── */
+
+@layer utilities {
+  .glow-accent {
+    box-shadow:
+      0 0 0 1px rgba(184, 255, 102, 0.35) inset,
+      0 0 28px -6px rgba(184, 255, 102, 0.6),
+      0 0 60px -20px rgba(184, 255, 102, 0.5);
+  }
+  .ring-accent-soft {
+    box-shadow: 0 0 0 1px rgba(184, 255, 102, 0.18);
+  }
+  .gradient-fade-b {
+    mask-image: linear-gradient(to bottom, black 60%, transparent);
+  }
+  .terminal-cursor::after {
+    content: '';
+    display: inline-block;
+    width: 0.55em;
+    height: 1em;
+    margin-left: 2px;
+    transform: translateY(2px);
+    background-color: var(--color-accent);
+    animation: blink 1.2s steps(2, end) infinite;
+  }
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+  .grid-bg {
+    background-image:
+      radial-gradient(ellipse at top, rgba(184, 255, 102, 0.06), transparent 50%),
+      linear-gradient(rgba(38, 42, 51, 0.4) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(38, 42, 51, 0.4) 1px, transparent 1px);
+    background-size: 100% 100%, 48px 48px, 48px 48px;
+    background-position: 0 0, -1px -1px, -1px -1px;
+  }
+  .crosshair {
+    background-image:
+      linear-gradient(to right, transparent calc(50% - 0.5px), var(--color-border) calc(50% - 0.5px), var(--color-border) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+      linear-gradient(to bottom, transparent calc(50% - 0.5px), var(--color-border) calc(50% - 0.5px), var(--color-border) calc(50% + 0.5px), transparent calc(50% + 0.5px));
+  }
+
+  /* Animated entrance — used by canvas cards. */
+  @keyframes rise-fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-rise {
+    animation: rise-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Pulsing dot for tool-call status */
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50%      { opacity: 1;   transform: scale(1.3); }
+  }
+  .animate-pulse-soft { animation: pulse-soft 1.4s ease-in-out infinite; }
+}

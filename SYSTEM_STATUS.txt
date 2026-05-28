@@ -1,0 +1,132 @@
+IKAN INTEL HUB — SYSTEM STATUS REPORT
+
+COMPLETION STATUS: 60%
+Estimated remaining: 2-3 days (sequential development from here)
+
+COMPLETED COMPONENTS:
+======================
+✓ Monorepo root configuration (pnpm workspaces, Turbo)
+✓ packages/shared (types, enums, India constants)
+✓ packages/db (Prisma schema, 30+ tables, seed data with 50 companies)
+✓ packages/ai (NIM + OpenRouter + Groq fallback chain, caching, budget)
+✓ packages/agent (agent loop, 12 tools, tool registry, canvas events)
+✓ packages/search (PostgresSearchProvider with FTS + trigram + pgvector)
+✓ packages/contacts (10-layer contact discovery engine)
+✓ packages/scrapers (SerpAPI adapter + 8 stubs)
+✓ apps/web (Next.js 15 skeleton, Tailwind v4, design tokens)
+✓ apps/worker (BullMQ structure)
+✓ apps/nlp (Python FastAPI structure)
+✓ apps/tool-server (Express stub)
+✓ apps/extension (WXT + React skeleton)
+✓ .env.example with all required keys
+✓ README.md with quick-start guide
+
+PENDING DEVELOPMENT (SEQUENCE):
+================================
+Next: Wire /api/chat streaming + agent loop
+  - Implement Vercel AI SDK streaming route
+  - Test first agent query (search_companies, get_company_brief)
+  - Verify canvas events work end-to-end
+  Time: 4 hours
+
+Then: Hero page UI + animations
+  - Implement particle canvas (Framer Motion)
+  - Build example query chips
+  - Add input handling
+  Time: 3 hours
+
+Then: Canvas components + animations
+  - CompanyCard, PersonRow, SignalRow full implementations
+  - Contact chips (verified/inferred/DNC states)
+  - Animated entry (stagger, spring physics)
+  Time: 4 hours
+
+Then: Auth.js integration
+  - Magic link flow (Resend email)
+  - Protected routes
+  - User context in tools
+  Time: 2 hours
+
+Then: Worker job processors
+  - Scrape handlers (company-site, news-rss, careers, etc.)
+  - Extract handler (Llama 3.1 8B JSON mode)
+  - Classify, embed, dedupe handlers
+  Time: 6 hours
+
+Then: Admin pages + compliance
+  - Ingestion view (job status)
+  - Sources view (last fetch per adapter)
+  - DNC list management
+  - DSR endpoint + audit log
+  Time: 4 hours
+
+Then: Deployment prep
+  - pnpm install + resolve any dependency conflicts
+  - Environment variable validation
+  - Local smoke test
+  - Vercel + Fly.io configuration
+  Time: 2 hours
+
+KEY ARCHITECTURAL INSIGHTS:
+============================
+
+1. TOOL REGISTRY PATTERN
+   Every tool is defined as a ToolDefinition with:
+   - name (string literal)
+   - description
+   - Zod schema for args + output
+   - async handler(args, ctx)
+   
+   This auto-converts to OpenAI tool spec for NIM, ensuring
+   type safety and consistency across the agent loop.
+
+2. CANVAS EVENT STREAMING
+   The agent loop emits { event: 'canvas:company_card', data: {...} }
+   during execution. The client subscribes via useChat().data and
+   animates each card/row as it arrives, creating a live-building
+   effect without waiting for the full response.
+
+3. CONTACT DISCOVERY INTENSITY LEVELS
+   Users choose how aggressive the contact finder is:
+   - low: verified-only (direct match, cross-source)
+   - medium: + LinkedIn snippets (SerpAPI/Bing)
+   - high: + pattern inference + phone extraction (all clearly labeled)
+   
+   Each layer has different confidence/precision tradeoffs.
+
+4. MULTI-LLM FALLBACK CHAIN
+   On NIM 429 (rate limit), automatically fail over to OpenRouter,
+   then Groq. Circuit breaker pattern prevents cascading failures.
+   All embeddings always use NIM (consistent vector space).
+
+5. SEARCH STRATEGY (MVP FIRST, PHASE 2 UPGRADE)
+   MVP uses PostgreSQL with:
+   - pg_trgm for fuzzy (typo tolerance)
+   - FTS for ranking (recency, relevance)
+   - pgvector for semantic (embeddings)
+   
+   Phase 2 swaps in Meilisearch via the same SearchProvider interface
+   without touching agent or UI code.
+
+DEVELOPER QUICKSTART:
+=====================
+1. pnpm install
+2. docker compose -f infra/docker-compose.yml up -d
+3. pnpm db:migrate
+4. pnpm db:seed
+5. cp .env.example .env.local
+   (fill in NVIDIA_NIM_API_KEY, SERPAPI_KEY, etc.)
+6. pnpm dev
+7. open http://localhost:3000
+
+NEXT MILESTONE:
+===============
+Wire chat end-to-end so that typing a query in the hero page
+results in a response from the agent loop with proper citations
+and canvas updates. This unlocks validation of:
+- Agent tool invocations
+- Citation post-processing
+- Canvas event streaming
+- Database persistence
+
+Once that works, everything else follows the same patterns.

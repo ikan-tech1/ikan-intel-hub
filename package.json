@@ -1,0 +1,31 @@
+{
+  "name": "ikan-intel-hub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An agentic, chat-first intelligence terminal for India B2B lead discovery.",
+  "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:generate": "pnpm --filter @ikan/db generate",
+    "db:migrate": "pnpm --filter @ikan/db migrate",
+    "db:push": "pnpm --filter @ikan/db push",
+    "db:seed": "pnpm --filter @ikan/db seed",
+    "db:studio": "pnpm --filter @ikan/db studio",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "3.3.3",
+    "prettier-plugin-tailwindcss": "0.6.8",
+    "turbo": "2.2.3",
+    "typescript": "5.6.3"
+  }
+}
