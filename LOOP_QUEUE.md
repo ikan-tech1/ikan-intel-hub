@@ -15,7 +15,8 @@
 
 ### Foundations & Reliability
 
-- [ ] **Real auth (Auth.js v5 magic-link)** — wire `next-auth@5` with `@auth/prisma-adapter`, Resend email provider. Replace `getDemoUser()` calls in `app/api/chat/route.ts` with `auth()`. Add `/login` and `/api/auth/[...nextauth]/route.ts`. Protect `/` with a server-side session check that redirects to `/login` when absent.
+- [x] **Real auth (Auth.js v5 magic-link)** — Auth.js v5 + PrismaAdapter + Resend HTTPS (graceful console-fallback when `RESEND_API_KEY` is a placeholder). `/login` page (premium-styled, magic-link only). `/api/auth/[...nextauth]/route.ts` mounts the handlers. New `lib/current-user.ts` resolves the session if present, otherwise falls back to the seeded demo user so the public hero still works.
+  - Deferred: hard-redirect on `/` to `/login` when no session — keeping the hero public for first-visit demos. Authenticated-only gating moves to the lists/settings/admin items.
 - [ ] **GitHub Actions CI** — `.github/workflows/ci.yml` running `pnpm install --frozen-lockfile`, `pnpm db:generate`, `pnpm -r typecheck`, `pnpm --filter @ikan/web build` on every PR. Block merge on failure.
 - [ ] **`/api/health` route** — returns `{ ok, version, db, redis, ai }` with shallow probes. Vercel cron pings every 5m.
 - [ ] **Error boundaries** — `app/error.tsx`, `app/not-found.tsx`, `app/(app)/error.tsx`. Premium-styled (matches design system) with retry CTAs.

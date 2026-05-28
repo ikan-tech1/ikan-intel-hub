@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@ikan/db';
 import { runAgent, type AgentEvent } from '@ikan/agent';
-import { getDemoUser } from '@/lib/demo-user';
+import { getCurrentUser } from '@/lib/current-user';
 
 /**
  * POST /api/chat — the streaming chat endpoint that drives the agent loop.
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const user = await getDemoUser();
+  const user = await getCurrentUser();
 
   // Find or create the chat thread.
   let threadId = body.threadId ?? null;
